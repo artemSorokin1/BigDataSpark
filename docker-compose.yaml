@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: bigdata
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data 
+      - ./init_db:/docker-entrypoint-initdb.d 
+      - ./data:/data 
+    networks:
+      - bigdata_network
+
+  spark-master:
+    image: bitnami/spark:3
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_NO_DAEMONIZE=yes
+    ports:
+      - "8080:8080" 
+      - "7077:7077" 
+    volumes:
+      - ./apps:/opt/apps
+      - ./jars:/opt/spark/jars   
+    networks:
+      - bigdata_network
+    depends_on:
+      - postgres
+
+  spark-worker:
+    image: bitnami/spark:3
+    container_name: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G 
+      - SPARK_NO_DAEMONIZE=yes 
+    volumes:
+      - ./apps:/opt/apps
+      - ./jars:/opt/spark/jars
+    networks:
+      - bigdata_network
+    depends_on:
+      - spark-master
+
+  clickhouse:
+    image: yandex/clickhouse-server:latest 
+    container_name: clickhouse_db
+    ports:
+      - "8123:8123" 
+      - "9000:9000" 
+    volumes:
+      - chdata:/var/lib/clickhouse
+    ulimits: 
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - bigdata_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s 
+
+volumes:
+  pgdata: 
+  chdata: 
+
+networks:
+  bigdata_network: 
+    driver: bridge
